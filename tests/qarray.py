@@ -39,6 +39,10 @@ class TestDenseQArray:
         assert jnp.array_equal((self.qarray - self.other).data, self.data - self.other)
         assert jnp.array_equal((self.qarray - self.qother).data, self.data - self.other)
 
+    def test_div(self):
+        scalar = 2 + 2j
+        assert jnp.array_equal((self.qarray / scalar).data, self.data / scalar)
+
     def test_mul(self):
         scalar = 2 + 2j
 
@@ -54,6 +58,10 @@ class TestDenseQArray:
         assert jnp.array_equal((self.other @ self.qarray).data, self.other @ self.data)
         assert jnp.array_equal((self.qother @ self.qarray).data, self.other @ self.data)
 
+    def test_pow(self):
+        scalar = 3
+        assert jnp.array_equal((self.qarray**3).data, self.data @ self.data @ self.data)
+
     def test_and(self):
         t = self.qarray & self.qother
 
@@ -66,3 +74,10 @@ class TestDenseQArray:
 
         assert jnp.array_equal(t.data, tensor(self.data, other))
         assert t.dims == (2, 2, 3)
+
+    def test_eq(self):
+        assert self.qarray == DenseQArray(self.data, dims=(2, 2))
+        
+    def test_getitem(self):
+        idx = (0,1)
+        assert self.qarray[idx] == self.data[idx]

@@ -6,10 +6,10 @@ from abc import abstractmethod
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-import qutip as qt
+from qutip import Qobj
 from jax import Array
 from jax.scipy.linalg import expm
-from jaxtyping import ArrayLike, ScalarLike
+from jaxtyping import Array, ArrayLike, ScalarLike
 
 from .utils.utils.general import (
     cosm,
@@ -43,7 +43,7 @@ def pack_dims(method: callable) -> callable:
 
 
 class QArray(eqx.Module):
-    r"""Quantum array object. DenseQArray is a wrapper around JAX arrays. It offers
+    r"""Quantum array object. QArray is a wrapper around JAX arrays. It offers
     convenience methods to handle more easily quantum states
     (bras, kets and density matrices) and quantum operators.
     If you come from QuTiP, this is the equivalent of the Qobj class.
@@ -130,7 +130,7 @@ class QArray(eqx.Module):
         """
 
     @abstractmethod
-    def trace(self) -> Array:
+    def tr(self) -> Array:
         """Trace of the quantum state.
 
         Returns:
@@ -254,7 +254,7 @@ class QArray(eqx.Module):
             The projector of the quantum state.
         """
 
-    # conversion methods
+    # Conversion methods
     @abstractmethod
     def to_numpy(self) -> np.ndarray:
         """Convert the quantum state to a NumPy array.
@@ -263,13 +263,13 @@ class QArray(eqx.Module):
             The NumPy array representation of the quantum state.
         """
 
-    def to_qutip(self) -> qt.QObj:
+    def to_qutip(self) -> Qobj:
         """Convert the quantum state to a QuTiP object.
 
         Returns:
             A QuTiP object representation of the quantum state.
         """
-        return qt.Qobj(self.to_numpy(), dims=self.dims)
+        return Qobj(self.to_numpy(), dims=self.dims)
 
     @abstractmethod
     def to_jax(self) -> Array:
@@ -288,59 +288,86 @@ class QArray(eqx.Module):
     def __str__(self) -> str:
         return self.__repr__()
 
+    # Arithmetic operations
     def __neg__(self) -> QArray:
         """Negate the quantum state."""
         return -1 * self
 
     def __mul__(
-        self, other: ScalarLike | ArrayLike @ abstractmethod
+        self, other: ScalarLike | Array @ abstractmethod
     ) -> QArray:  # warning if used with array
         """Element-wise multiplication with a scalar or an array."""
 
     def __rmul__(
-        self, other: ScalarLike | ArrayLike
+        self, other: ScalarLike | Array
     ) -> QArray:  # warning if used with array
-        """Element-wise multiplication with a scalar or an array on the right."""
+        """Element-wise multiplication with a scalar or an array on the right 
+        (exactly the same as left multiplication)"""
+        return self * other
 
     def __add__(
-        self, other: ScalarLike | ArrayLike @ abstractmethod
+        self, other: ScalarLike | Array @ abstractmethod
     ) -> QArray:  # warning if used with scalar
         """Element-wise addition with a scalar or an array."""
 
     def __radd__(
-        self, other: ScalarLike | ArrayLike
+        self, other: ScalarLike | Array
     ) -> QArray:  # warning if used with scalar
         """Element-wise addition with a scalar or an array on the right."""
         return self + other
 
     def __sub__(
-        self, other: ScalarLike | ArrayLike
+        self, other: ScalarLike | Array
     ) -> QArray:  # warning if used with scalar
         """Element-wise subtraction with a scalar or an array."""
 
     def __rsub__(
-        self, other: ScalarLike | ArrayLike
+        self, other: ScalarLike | Array
     ) -> QArray:  # warning if used with scalar
         """Element-wise subtraction with a scalar or an array on the right."""
         return -self + other
 
     @abstractmethod
-    def __matmul__(self, other: ArrayLike) -> QArray:
+    def __matmul__(self, other: Array) -> QArray:
         """Matrix multiplication with another quantum state or JAX array."""
 
-    def __rmatmul__(self, other: ArrayLike) -> QArray:
+    def __rmatmul__(self, other: Array) -> QArray:
         """Matrix multiplication with another quantum state or JAX array
         on the right.
         """
 
+    def __div__(self, other: ScalarLike) -> QArray:
+        """Scalar division"""
 
+    def __pow__(self, n: int, m = None) -> QArray:
+        """ Power operator"""
+
+    def __abs__(self) -> QArray:
+        """Absolute value"""
+
+    def __and__(self, other: Array) -> QArray:
+        """Tensor product between two quantum states."""
+
+    # Boolean operations
+    def __eq__(self, other: Array) -> bool:
+        """ Equality operator"""
+    
+    def __ne__(self, other: Array) -> bool:
+        """ Inequality operator"""
+        return not(self == other)
+
+    # Indexing
+    def __getitem__(self, ind):
+        """ Get elements from the data """
+
+        
 class DenseQArray(QArray):
     r"""DenseQArray is QArray that uses JAX arrays as data storage."""
 
-    data: ArrayLike
+    data: Array
     dims: tuple[int, ...]
 
-    def __init__(self, data: ArrayLike, dims: tuple[int, ...] | None = None):
+    def __init__(self, data: Array, dims: tuple[int, ...] | None = None):
         if not (isbra(data) or isket(data) or isdm(data) or isop(data)):
             raise ValueError(
                 f'DenseQArray data must be a bra, a ket, a density matrix '
@@ -382,11 +409,10 @@ class DenseQArray(QArray):
     def unit(self) -> Array:
         return unit(self.data)
 
-    @pack_dims
     def diag(self) -> Array:
         return jnp.diag(self.data)
 
-    def trace(self) -> Array:
+    def tr(self) -> Array:
         return jnp.trace(self.data)
 
     @pack_dims
@@ -405,11 +431,6 @@ class DenseQArray(QArray):
 
     @pack_dims
     def dag(self) -> Array:
-        """Dagger of the quantum state.
-
-        Returns:
-            DenseQArray: The dagger of the quantum state.
-        """
         return dag(self.data)
 
     def isket(self) -> bool:
@@ -474,7 +495,7 @@ class DenseQArray(QArray):
         """
         return sinm(self.data)
 
-    def __add__(self, other: ScalarLike | ArrayLike | DenseQArray) -> DenseQArray:
+    def __add__(self, other: ScalarLike | Array | DenseQArray) -> DenseQArray:
         if isinstance(other, DenseQArray):
             if self.dims != other.dims:
                 raise ValueError(
@@ -491,7 +512,7 @@ class DenseQArray(QArray):
             )
         return DenseQArray(self.data + other, self.dims)
 
-    def __sub__(self, other: ScalarLike | ArrayLike | DenseQArray) -> DenseQArray:
+    def __sub__(self, other: ScalarLike | Array | DenseQArray) -> DenseQArray:
         if isinstance(other, DenseQArray):
             if self.dims != other.dims:
                 raise ValueError(
@@ -508,8 +529,8 @@ class DenseQArray(QArray):
             )
         return DenseQArray(self.data - other, self.dims)
 
-    def __mul__(self, other: ScalarLike | ArrayLike | DenseQArray) -> DenseQArray:
-        if isinstance(other, (ArrayLike, DenseQArray)):
+    def __mul__(self, other: ScalarLike | Array | DenseQArray) -> DenseQArray:
+        if isinstance(other, (Array, DenseQArray)):
             warnings.warn(
                 '"*" between a DenseQArray and another DenseQArray '
                 'or an Array performs element-wise multiplication. If you '
@@ -527,7 +548,7 @@ class DenseQArray(QArray):
         else:
             return DenseQArray(self.data * other, self.dims)
 
-    def __matmul__(self, other: ScalarLike | ArrayLike | DenseQArray) -> DenseQArray:
+    def __matmul__(self, other: ScalarLike | Array | DenseQArray) -> DenseQArray:
         if isinstance(other, DenseQArray):
             if self.dims != other.dims:
                 raise ValueError(
@@ -538,7 +559,7 @@ class DenseQArray(QArray):
         else:
             return DenseQArray(self.data @ other, self.dims)
 
-    def __rmatmul__(self, other: ScalarLike | ArrayLike | DenseQArray) -> DenseQArray:
+    def __rmatmul__(self, other: ScalarLike | Array | DenseQArray) -> DenseQArray:
         if isinstance(other, DenseQArray):
             if self.dims != other.dims:
                 raise ValueError(
@@ -549,6 +570,31 @@ class DenseQArray(QArray):
         else:
             return DenseQArray(other @ self.data, self.dims)
 
+    def __div__(self, other: ScalarLike) -> DenseQArray:
+        return DenseQArray(self.data/other, self.dims)
+
+    def __pow__(self, n: int, m = None) -> QArray:
+        if self.shape[0] != self.shape[1]:
+            raise Exception("Raising a QArray to some power works only for " +
+                            "operators and super-operators (square matrices).")
+
+        if m is not None:
+            raise NotImplementedError("modulo is not implemented for QArray")
+
+        return DenseQArray(jnp.linalg.matrix_power(self.data), self.dims)
+
+    def __abs__(self) -> QArray:
+        return DenseQArray(jnp.abs(self.data), self.dims)
+    
     def __and__(self, other: DenseQArray) -> DenseQArray:
-        """Tensor product between two quantum states."""
         return DenseQArray(tensor(self.data, other.data), self.dims + other.dims)
+
+    # TODO: relate to the global tolerance setting?
+    def __eq__(self, other: ArrayLike | DenseQArray) -> bool:
+        if isinstance(other, DenseQArray) and self.dims == other.dims:
+            return jnp.allclose(self.data, other.data)
+        else:
+            return jnp.allclose(self.data, other)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
