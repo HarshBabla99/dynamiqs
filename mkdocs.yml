@@ -54,7 +54,6 @@ extra:
 extra_css:
   - stylesheets/extra.css
   - stylesheets/theme.css
-  - stylesheets/home.css
   - https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.7/katex.min.css
 plugins:
   - search
@@ -145,6 +144,7 @@ nav:
           - Open systems: documentation/basics/open-systems.md
           - Batching simulations: documentation/basics/batching-simulations.md
           - Computing gradients: documentation/basics/computing-gradients.md
+          - Floquet integration: documentation/basics/floquet-integration.md
       - Advanced examples:
           - Driven-dissipative Kerr oscillator: documentation/advanced_examples/kerr-oscillator.md
           - Continuous jump measurement: documentation/advanced_examples/continuous-jump-measurement.md
@@ -185,10 +185,17 @@ nav:
               - Expm: python_api/method/Expm.md
               - Event: python_api/method/Event.md
               - JumpMonteCarlo: python_api/method/JumpMonteCarlo.md
+              - DiffusiveMonteCarlo: python_api/method/DiffusiveMonteCarlo.md
+              - LowRank: python_api/method/LowRank.md
           - Gradients (dq.gradient):
-              - Autograd: python_api/gradient/Autograd.md
-              - CheckpointAutograd: python_api/gradient/CheckpointAutograd.md
-              - ForwardAutograd: python_api/gradient/ForwardAutograd.md
+              - Direct: python_api/gradient/Direct.md
+              - BackwardCheckpointed: python_api/gradient/BackwardCheckpointed.md
+              - Forward: python_api/gradient/Forward.md
+              - HigherOrder: python_api/gradient/HigherOrder.md
+          - Progress meters:
+              - NoProgressMeter: python_api/progress_meter/NoProgressMeter.md
+              - TextProgressMeter: python_api/progress_meter/TextProgressMeter.md
+              - TqdmProgressMeter: python_api/progress_meter/TqdmProgressMeter.md
       - Utilities:
           - Operators:
               - eye: python_api/utils/operators/eye.md
@@ -260,6 +267,7 @@ nav:
               - fidelity: python_api/utils/general/fidelity.md
               - purity: python_api/utils/general/purity.md
               - entropy_vn: python_api/utils/general/entropy_vn.md
+              - entropy_relative: python_api/utils/general/entropy_relative.md
               - bloch_coordinates: python_api/utils/general/bloch_coordinates.md
               - wigner: python_api/utils/general/wigner.md
           - QArray utilities:
@@ -293,6 +301,7 @@ nav:
               - herm: python_api/random/herm.md
               - psd: python_api/random/psd.md
               - dm: python_api/random/dm.md
+              - operator: python_api/random/operator.md
               - ket: python_api/random/ket.md
           - Plotting (dq.plot):
               - wigner: python_api/plot/wigner.md
@@ -307,8 +316,10 @@ nav:
               - gifit: python_api/plot/gifit.md
               - grid: python_api/plot/grid.md
               - mplstyle: python_api/plot/mplstyle.md
-          - Magic helpers:
-            - hc: python_api/hermitian_conjugate/hc.md
+          - Helpers:
+            - hc: python_api/helpers/hc.md
+            - clicktimes_sse_to_sme: python_api/helpers/clicktimes_sse_to_sme.md
+            - measurements_sse_to_sme: python_api/helpers/measurements_sse_to_sme.md
   - Community:
       - community/index.md
       - Contributing: community/contributing.md

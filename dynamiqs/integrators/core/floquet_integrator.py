@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from typing import cast
+
 import equinox as eqx
 import jax.numpy as jnp
 from jaxtyping import PyTree
 
 from dynamiqs.result import FloquetSaved
 
-from ...result import Result, Saved
+from ...qarrays.qarray import QArray
+from ...qarrays.utils import asqarray
+from ...result import FloquetResult, Result
 from ..apis.sepropagator import _sepropagator
 from .abstract_integrator import BaseIntegrator
 from .interfaces import SEInterface
@@ -15,8 +19,8 @@ from .interfaces import SEInterface
 class FloquetIntegrator(BaseIntegrator):
     T: float
 
-    def result(self, saved: Saved, infos: PyTree | None = None) -> Result:
-        return self.result_class(
+    def result(self, saved: FloquetSaved, infos: PyTree | None = None) -> Result:
+        return FloquetResult(
             self.ts, self.method, self.gradient, self.options, saved, infos, self.T
         )
 
@@ -37,16 +41,17 @@ class SEFloquetIntegrator(FloquetIntegrator, SEInterface):
 
         # extract quasienergies
         # minus sign and divide by T to account for e^{-i\epsilon T}
-        quasienergies = jnp.angle(-evals) / self.T
+        quasienergies = -jnp.angle(evals) / self.T
         # quasienergies are only defined modulo 2pi / T. Usual convention is to
         # normalize quasienergies to the region -pi/T, pi/T
         omega = 2.0 * jnp.pi / self.T
         quasienergies = jnp.mod(quasienergies + 0.5 * omega, omega) - 0.5 * omega
 
         # propagate the Floquet modes to all times in tsave
-        propagators = seprop_result.propagators[:-1, :, :]
+        propagators = cast(QArray, seprop_result.propagators[:-1, :, :])
         modes = propagators @ evecs  # (ntsave, n, n) @ (n, m) = (ntsave, n, m)
-        modes = modes.mT[..., None]  # (ntsave, m, n, 1)
+        # convert each mode to a ket of shape (n, 1)
+        modes = asqarray(modes.mT.to_jax()[..., None], dims=propagators.dims)
         modes = modes * jnp.exp(
             1j * quasienergies[:, None, None] * self.ts[:, None, None, None]
         )

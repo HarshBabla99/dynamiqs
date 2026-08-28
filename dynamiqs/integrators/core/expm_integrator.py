@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from functools import partial
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from diffrax._custom_types import RealScalarLike
 from jax import Array
 from jaxtyping import PyTree
 
@@ -12,7 +14,7 @@ from dynamiqs._utils import concatenate_sort
 
 from ..._checks import check_hermitian
 from ...qarrays.qarray import QArray
-from ...result import Result, Saved
+from ...result import MESolveResult, Result, Saved, SolveSaved
 from ...utils.general import expm
 from ...utils.vectorization import slindbladian, unvectorize, vectorize
 from .._utils import ispwc
@@ -54,7 +56,7 @@ class ExpmIntegrator(BaseIntegrator, AbstractSaveMixin, AbstractTimeInterface):
             return f'{self.nsteps} steps'
 
     @abstractmethod
-    def generator(self, t: float) -> QArray:
+    def generator(self, t: RealScalarLike) -> QArray:
         pass
 
     def run(self) -> Result:
@@ -73,7 +75,7 @@ class ExpmIntegrator(BaseIntegrator, AbstractSaveMixin, AbstractTimeInterface):
         step_propagators = expm(delta_ts[:, None, None] * As)  # (ntimes-1, N, N)
 
         # === combine the propagators together
-        def step(carry: QArray, x: QArray) -> tuple[QArray, QArray]:
+        def step(carry: QArray, x: QArray) -> tuple[QArray, Saved]:
             # note the ordering x @ carry: we accumulate propagators from the left
             x_next = x @ carry
             return x_next, self.save(x_next)
@@ -105,7 +107,7 @@ class SEExpmIntegrator(ExpmIntegrator, SEInterface):
                 'Method `Expm` requires a constant or piecewise constant Hamiltonian.'
             )
 
-    def generator(self, t: float) -> QArray:
+    def generator(self, t: RealScalarLike) -> QArray:
         return -1j * self.H(t)  # (n, n)
 
 
@@ -145,7 +147,7 @@ class MEExpmIntegrator(ExpmIntegrator, MEInterface):
                 'Method `Expm` requires constant or piecewise constant jump operators.'
             )
 
-    def generator(self, t: float) -> QArray:
+    def generator(self, t: RealScalarLike) -> QArray:
         return slindbladian(self.H(t), self.L(t))  # (n^2, n^2)
 
 
@@ -162,14 +164,16 @@ class MESolveExpmIntegrator(MEExpmIntegrator, SolveSaveMixin, SolveInterface):
         # convert to vectorized form
         self.y0 = vectorize(self.y0)  # (n^2, 1)
 
-    def save(self, y: PyTree) -> Saved:
+    def save(self, y: PyTree) -> SolveSaved:
         # TODO: implement bexpect for vectorized operators and convert at the end
         # instead of at each step
         y = unvectorize(y)
         return super().save(y)
 
 
-mesolve_expm_integrator_constructor = MESolveExpmIntegrator
+mesolve_expm_integrator_constructor = partial(
+    MESolveExpmIntegrator, result_class=MESolveResult
+)
 
 
 class MEPropagatorExpmIntegrator(MEExpmIntegrator, PropagatorSaveMixin):

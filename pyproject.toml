@@ -17,20 +17,21 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Physics",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "qutip>=4.7.5",
     "scipy",
     "numpy",
     "matplotlib",
-    "tqdm",
-    "jax>=0.4.36,<0.5.3", # >=0.4.36 for GPU eig support
+    # jax>=0.4.36 for GPU eig support,
+    # jax!=0.7.0,!=0.7.1 because of diffrax compatibility issues, see https://github.com/patrick-kidger/diffrax/issues/680
+    "jax>=0.4.36,!=0.7.0,!=0.7.1",
     "jaxtyping",
-    "diffrax>=0.6.1",  # for complex support (0.5.0), progress meter (0.5.1), compatibility with jax 0.4.36 (0.6.1)
+    "diffrax>=0.6.1", # for complex support (0.5.0), progress meter (0.5.1), compatibility with jax 0.4.36 (0.6.1)
     "equinox",
-    "optimistix",  # for typing of root-finding in Event method
+    "optimistix", # for typing of root-finding in Event method
     "pillow",
-    "cmasher>=1.8.0",  # avoid matplotlib colormaps deprecation warning
+    "cmap",
     "ipython",
     "tqdm",
 ]
@@ -46,11 +47,12 @@ build-backend = "flit_core.buildapi"
 
 [project.optional-dependencies]
 dev = [
-    "taskipy",
+    "taskipy>=1.14.1",
     "ruff>=0.8",
     "codespell",
     "pytest>=8.0",
     "pytest-ordering",
+    "pytest-split",
     "pytest-sugar",
     "pytest-xdist",
     "mkdocs-material",
@@ -66,6 +68,7 @@ dev = [
     "flit",
     "mike",
     "optax",  # for gradient descent tutorials
+    "ty",
 ]
 
 [tool.ruff]
@@ -118,6 +121,11 @@ convention = "google"
 skip = ".git,*.ipynb"
 ignore-words-list = "ket, braket, SME"
 
+[tool.ty.rules]
+division-by-zero = "error"
+possibly-unresolved-reference = "error"
+unused-ignore-comment = "error"
+
 # === taskipy tasks definition ===
 
 [tool.taskipy.tasks.lint]
@@ -132,13 +140,28 @@ help = "auto-format the code (ruff)"
 cmd = 'echo "\n>>> codespell" && codespell tests dynamiqs'
 help = "check for misspellings (codespell)"
 
+[tool.taskipy.tasks.type]
+cmd = 'echo "\n>>> ty check dynamiqs" && ty check dynamiqs'
+help = "check types (ty)"
+
 [tool.taskipy.tasks.clean]
-cmd = 'task lint && task format && task codespell'
-help = "clean the code (ruff + codespell)"
+cmd = 'task lint && task format && task codespell && task type'
+help = "clean the code (ruff + codespell + ty)"
+
+[tool.taskipy.tasks.check]
+cmd = '''echo "\n>>> ruff check" && ruff check &&
+         echo "\n>>> ruff format --check" && ruff format --check &&
+         task codespell &&
+         task type'''
+help = "run the static checks (ruff + codespell + ty)"
 
 [tool.taskipy.tasks.test]
 cmd = 'echo "\n>>> pytest -n=auto tests" && pytest -n=auto tests'
 help = "run the unit tests suite (pytest)"
+
+[tool.taskipy.tasks.durations]
+cmd = 'echo "\n>>> generate .test_durations" && pytest tests --collect-only -q -p tests.generate_test_durations'
+help = "regenerate .test_durations for CI test sharding (pytest-split)"
 
 [tool.taskipy.tasks.doctest-code]
 cmd = 'echo "\n>>> pytest dynamiqs" && python docs/remove_figs.py docs/figs_code && pytest dynamiqs'
@@ -162,12 +185,13 @@ help = "preview documentation website with hot-reloading"
 
 [tool.taskipy.tasks.all]
 cmd = 'task clean && task test && task doctest'
-help = "run all tasks before a commit (ruff + codespell + pytest + doctest)"
+help = "run all tasks before a commit (ruff + codespell + ty + pytest + doctest)"
 
 [tool.taskipy.tasks.ci]
 cmd = '''echo "\n>>> ruff check" && ruff check &&
          echo "\n>>> ruff format --check" && ruff format --check &&
          task codespell &&
+         task type &&
          task test &&
          task doctest &&
          task docbuild'''

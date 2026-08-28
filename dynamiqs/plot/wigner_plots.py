@@ -11,7 +11,7 @@ from .._checks import check_shape
 from ..qarrays.qarray import QArrayLike
 from ..qarrays.utils import asqarray, to_jax
 from ..utils import wigner as compute_wigner
-from .utils import add_colorbar, colors, gif_indices, gifit, grid, optional_ax
+from .utils import add_colorbar, gif_indices, gifit, grid, optional_ax
 
 __all__ = ['wigner_data', 'wigner', 'wigner_gif', 'wigner_mosaic']
 
@@ -44,6 +44,8 @@ def wigner_data(
         - [`dq.plot.wigner()`][dynamiqs.plot.wigner]: plot the Wigner function of a
             state.
     """
+    assert ax is not None
+
     w = to_jax(wigner)
     check_shape(w, 'wigner', '(n, n)')
     if w.dtype not in (jnp.float32, jnp.float64):
@@ -67,8 +69,11 @@ def wigner_data(
         origin='lower',
         aspect='equal',
         interpolation=interpolation,
-        extent=[-xmax, xmax, -ymax, ymax],
+        extent=(-xmax, xmax, -ymax, ymax),
     )
+
+    # remove grid by default
+    ax.grid(False)
 
     # axis label
     ax.set(xlabel=r'$\mathrm{Re}(\alpha)$', ylabel=r'$\mathrm{Im}(\alpha)$')
@@ -79,11 +84,11 @@ def wigner_data(
             cax.set_yticks([vmin, 0.0, vmax], labels=[r'$-2/\pi$', r'$0$', r'$2/\pi$'])
 
     if cross:
-        ax.axhline(0.0, color=colors['grey'], ls='-', lw=0.7, alpha=0.8)
-        ax.axvline(0.0, color=colors['grey'], ls='-', lw=0.7, alpha=0.8)
+        color = '#9e9e9e'
+        ax.axhline(0.0, color=color, ls='-', lw=0.7, alpha=0.8)
+        ax.axvline(0.0, color=color, ls='-', lw=0.7, alpha=0.8)
 
     if clear:
-        ax.grid(False)
         ax.axis(False)
 
 
@@ -101,6 +106,7 @@ def wigner(
     colorbar: bool = True,
     cross: bool = False,
     clear: bool = False,
+    hbar: float = 0.5,
 ):
     r"""Plot the Wigner function of a state.
 
@@ -146,11 +152,13 @@ def wigner(
 
         ![plot_wigner_4legged](../../figs_code/plot_wigner_4legged.png){.fig-half}
     """
+    assert ax is not None
+
     state = asqarray(state)
     check_shape(state, 'state', '(n, 1)', '(n, n)')
 
     ymax = xmax if ymax is None else ymax
-    _, _, w = compute_wigner(state, xmax, ymax, npixels)
+    _, _, w = compute_wigner(state, xmax, ymax, npixels, hbar=hbar)
 
     wigner_data(
         w,
@@ -180,6 +188,7 @@ def wigner_mosaic(
     cmap: str = 'dq',
     interpolation: str = 'bilinear',
     cross: bool = False,
+    hbar: float = 0.5,
 ):
     r"""Plot the Wigner function of multiple states in a mosaic arrangement.
 
@@ -237,7 +246,7 @@ def wigner_mosaic(
 
     ymax = xmax if ymax is None else ymax
     selected_indexes = np.linspace(0, nstates, n, dtype=int)
-    _, _, wig = compute_wigner(states[selected_indexes], xmax, ymax, npixels)
+    _, _, wig = compute_wigner(states[selected_indexes], xmax, ymax, npixels, hbar=hbar)
 
     # plot individual wigner
     for i, ax in enumerate(axs):
@@ -270,6 +279,7 @@ def wigner_gif(
     interpolation: str = 'bilinear',
     cross: bool = False,
     clear: bool = False,
+    hbar: float = 0.5,
 ) -> Image:
     r"""Plot a GIF of the Wigner function of multiple states.
 
@@ -311,10 +321,10 @@ def wigner_gif(
     ymax = xmax if ymax is None else ymax
     nframes = int(gif_duration * fps)
     indices = gif_indices(len(states), nframes)
-    _, _, wig = compute_wigner(states[indices], xmax, ymax, npixels)
+    _, _, wig = compute_wigner(states[indices], xmax, ymax, npixels, hbar=hbar)
 
     return gifit(wigner_data)(
-        wig,
+        list(wig),
         w=w,
         h=ymax / xmax * w,
         xmax=xmax,

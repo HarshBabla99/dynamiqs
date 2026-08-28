@@ -6,7 +6,7 @@ To contribute efficiently, a few guidelines are compiled below.
 
 ## 1. Requirements
 
-The project was written using Python 3.10+, you must have a compatible version of Python (i.e. >= 3.10) installed on your computer.
+The project was written using Python 3.11+, you must have a compatible version of Python (i.e. >= 3.11) installed on your computer.
 
 ## 2. Setup
 
@@ -57,20 +57,21 @@ Here is a list of available tasks:
 lint         lint the code (ruff)
 format       auto-format the code (ruff)
 codespell    check for misspellings (codespell)
-clean        clean the code (ruff + codespell)
+type         check types (ty)
+clean        clean the code (ruff + codespell + ty)
 test         run the unit tests suite (pytest)
 doctest-code check code docstrings examples (doctest)
 doctest-docs check documentation examples (doctest)
 doctest      check all examples (doctest)
 docbuild     build the documentation website
 docserve     preview documentation website with hot-reloading
-all          run all tasks before a commit (ruff + codespell + pytest + doctest)
+all          run all tasks before a commit (ruff + codespell + ty + pytest + doctest)
 ci           run all the CI checks
 ```
 
 ### Run tasks automatically before each commit
 
-Alternatively, you can use `pre-commit` to automatically run the cleaning tasks (ruff + codespell) before each commit:
+Alternatively, you can use `pre-commit` to automatically run the cleaning tasks (ruff + codespell + ty) before each commit:
 
 ```shell
 pip install pre-commit
@@ -135,7 +136,7 @@ We use [Google-style docstrings](https://google.github.io/styleguide/pyguide.htm
 - Headers can include (in this order and with these names): `Args`, `Returns`, `Raises`, `Examples`, `See also`.
 - You can use the admonitions (colored blocks in the documentation) `Note` and `Warning` if relevant.
 - Avoid using `The` in arguments description, for example change `x: The quantum state.` to `x: Quantum state.`.
-- Specify arguments type in `_(...)_` after the argument name and _only if it is necessary_. Adding a type can for example be useful to add a shape information for a qarray or an array, or because the argument typing in the function signature is opaque.
+- Specify arguments type in `(...)` after the argument name and _only if it is necessary_. Adding a type can for example be useful to add a shape information for a qarray or an array, or because the argument typing in the function signature is opaque.
 
 ### Documentation
 

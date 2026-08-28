@@ -16,7 +16,7 @@ doc_sections = {
     'time_qarray': (['dynamiqs/time_qarray.py'], 'dq'),
     'method': (['dynamiqs/method.py'], 'dq.method'),
     'gradient': (['dynamiqs/gradient.py'], 'dq.gradient'),
-    'hermitian_conjugate': (['dynamiqs/hermitian_conjugate.py'], 'dq'),
+    'helpers': (['dynamiqs/helpers.py'], 'dq'),
     'utils/operators': (['dynamiqs/utils/operators.py'], 'dq'),
     'utils/states': (['dynamiqs/utils/states.py'], 'dq'),
     'utils/general': (
@@ -29,6 +29,7 @@ doc_sections = {
     'utils/optimal_control': (['dynamiqs/utils/optimal_control.py'], 'dq'),
     'random': (['dynamiqs/random/'], 'dq.random'),
     'plot': (['dynamiqs/plot/'], 'dq.plot'),
+    'progress_meter': (['dynamiqs/progress_meter.py'], 'dq'),
 }
 
 
@@ -75,8 +76,12 @@ for section, (paths, namespace) in doc_sections.items():
             # create the function page
             with mkdocs_gen_files.open(doc_path_function, 'w') as f:
                 module = identifier.split('.')[0]
+                print('---', file=f)
+                print(f'title: {namespace}.{function}', file=f)
+                print('---', file=f)
                 print(f'::: {identifier}.{function}', file=f)
                 print('    options:', file=f)
-                print(f'        namespace: {namespace}', file=f)
+                print('        extra:', file=f)
+                print(f'            namespace: {namespace}', file=f)
 
             mkdocs_gen_files.set_edit_path(doc_path_function, Path('..') / src_path)

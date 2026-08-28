@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from collections.abc import Callable
 from typing import NamedTuple
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from jaxtyping import ArrayLike, PyTree
+from jaxtyping import ArrayLike, PyTree, ScalarLike
 
 import dynamiqs as dq
 from dynamiqs import QArray, asqarray, dense
 from dynamiqs.gradient import Gradient
 from dynamiqs.method import Method
-from dynamiqs.options import Options
+from dynamiqs.progress_meter import AbstractProgressMeter
 from dynamiqs.qarrays.layout import Layout
 from dynamiqs.result import Result
 from dynamiqs.time_qarray import TimeQArray
 
-from ..system import System
+from ._system import System
 
 
 class OpenSystem(System):
@@ -30,8 +32,14 @@ class OpenSystem(System):
         method: Method,
         *,
         gradient: Gradient | None = None,
-        options: Options = Options(),  # noqa: B008
         params: PyTree | None = None,
+        save_states: bool = True,
+        cartesian_batching: bool = True,
+        progress_meter: AbstractProgressMeter | bool | None = None,
+        t0: ScalarLike | None = None,
+        save_extra: Callable[[Array], PyTree] | None = None,
+        vectorized: bool = False,
+        assume_hermitian: bool = True,
     ) -> Result:
         params = self.params_default if params is None else params
         H = self.H(params)
@@ -46,7 +54,13 @@ class OpenSystem(System):
             exp_ops=Es,
             method=method,
             gradient=gradient,
-            options=options,
+            save_states=save_states,
+            cartesian_batching=cartesian_batching,
+            progress_meter=progress_meter,
+            t0=t0,
+            save_extra=save_extra,
+            vectorized=vectorized,
+            assume_hermitian=assume_hermitian,
         )
 
 
@@ -91,44 +105,38 @@ class OCavity(OpenSystem):
             dq.momentum(self.n, layout=self.layout),
         ]
 
-    def _alpha(self, t: float) -> Array:
-        return self.alpha0 * jnp.exp(-1j * self.delta * t - 0.5 * self.kappa * t)
+    def _alpha(self, params: PyTree, t: float) -> Array:
+        return params.alpha0 * jnp.exp(-1j * params.delta * t - 0.5 * params.kappa * t)
+
+    def _state(self, params: PyTree, t: float) -> QArray:
+        # analytical state as a function of the parameters
+        return dq.coherent_dm(self.n, self._alpha(params, t))
 
     def state(self, t: float) -> QArray:
-        return dq.coherent_dm(self.n, self._alpha(t))
+        return self._state(self.params_default, t)
+
+    def _expect(self, params: PyTree, t: float) -> Array:
+        # analytical expectation values (<x>, <p>) as a function of the parameters
+        alpha_t = self._alpha(params, t)
+        return jnp.array([alpha_t.real, alpha_t.imag])
 
     def expect(self, t: float) -> Array:
-        alpha_t = self._alpha(t)
-        exp_x = alpha_t.real
-        exp_p = alpha_t.imag
-        return jnp.array([exp_x, exp_p], dtype=alpha_t.dtype)
+        return self._expect(self.params_default, t)
 
     def loss_state(self, state: QArray) -> Array:
         return dq.expect(dq.number(self.n, layout=self.layout), state).real
 
     def grads_state(self, t: float) -> PyTree:
-        grad_delta = 0.0
-        grad_alpha0 = 2 * self.alpha0 * jnp.exp(-self.kappa * t)
-        grad_kappa = -(self.alpha0**2) * t * jnp.exp(-self.kappa * t)
-        return self.Params(grad_delta, grad_alpha0, grad_kappa)
+        def _loss_state(params: PyTree) -> Array:
+            return self.loss_state(self._state(params, t))
+
+        return jax.grad(_loss_state)(self.params_default)
 
     def grads_expect(self, t: float) -> PyTree:
-        cdt = jnp.cos(self.delta * t)
-        sdt = jnp.sin(self.delta * t)
-        emkt = jnp.exp(-0.5 * self.kappa * t)
+        return jax.jacrev(self._expect)(self.params_default, t)
 
-        grad_x_delta = -self.alpha0 * t * sdt * emkt
-        grad_p_delta = -self.alpha0 * t * cdt * emkt
-        grad_x_alpha0 = cdt * emkt
-        grad_p_alpha0 = -sdt * emkt
-        grad_x_kappa = -0.5 * self.alpha0 * t * cdt * emkt
-        grad_p_kappa = 0.5 * self.alpha0 * t * sdt * emkt
-
-        return self.Params(
-            [grad_x_delta, grad_p_delta],
-            [grad_x_alpha0, grad_p_alpha0],
-            [grad_x_kappa, grad_p_kappa],
-        )
+    def hessian_expect(self, t: float) -> PyTree:
+        return jax.hessian(self._expect)(self.params_default, t)
 
 
 class OTDQubit(OpenSystem):
@@ -160,73 +168,48 @@ class OTDQubit(OpenSystem):
     def Es(self, params: PyTree) -> list[QArray]:  # noqa: ARG002
         return [dq.sigmax(), dq.sigmay(), dq.sigmaz()]
 
-    def _theta(self, t: float) -> float:
-        return 2 * self.eps / self.omega * jnp.sin(self.omega * t)
+    def _theta(self, params: PyTree, t: float) -> float:
+        return 2 * params.eps / params.omega * jnp.sin(params.omega * t)
 
-    def _eta(self, t: float) -> float:
-        return jnp.exp(-2 * self.gamma * t)
+    def _eta(self, params: PyTree, t: float) -> float:
+        return jnp.exp(-2 * params.gamma * t)
 
-    def state(self, t: float) -> QArray:
-        theta = self._theta(t)
-        eta = self._eta(t)
+    def _state(self, params: PyTree, t: float) -> QArray:
+        # analytical state as a function of the parameters
+        theta = self._theta(params, t)
+        eta = self._eta(params, t)
         rho_00 = 0.5 * (1 + eta * jnp.cos(theta))
         rho_11 = 0.5 * (1 - eta * jnp.cos(theta))
         rho_01 = 0.5j * eta * jnp.sin(theta)
         rho_10 = -0.5j * eta * jnp.sin(theta)
         return asqarray([[rho_00, rho_01], [rho_10, rho_11]])
 
+    def state(self, t: float) -> QArray:
+        return self._state(self.params_default, t)
+
+    def _expect(self, params: PyTree, t: float) -> Array:
+        # analytical expectation values (<x>, <y>, <z>) as a function of the parameters
+        theta = self._theta(params, t)
+        eta = self._eta(params, t)
+        return jnp.array([0.0, -eta * jnp.sin(theta), eta * jnp.cos(theta)])
+
     def expect(self, t: float) -> Array:
-        theta = self._theta(t)
-        eta = self._eta(t)
-        exp_x = 0
-        exp_y = -eta * jnp.sin(theta)
-        exp_z = eta * jnp.cos(theta)
-        return jnp.array([exp_x, exp_y, exp_z]).real
+        return self._expect(self.params_default, t)
 
     def loss_state(self, state: QArray) -> Array:
         return dq.expect(dq.sigmaz(), state).real
 
     def grads_state(self, t: float) -> PyTree:
-        theta = self._theta(t)
-        eta = self._eta(t)
-        # gradients of theta
-        dtheta_deps = 2 * jnp.sin(self.omega * t) / self.omega
-        dtheta_domega = 2 * self.eps / self.omega * t * jnp.cos(self.omega * t)
-        dtheta_domega -= 2 * self.eps / self.omega**2 * jnp.sin(self.omega * t)
-        # gradient of eta
-        deta_dgamma = -2 * t * eta
-        # gradients of sigma_z
-        grad_eps = -dtheta_deps * eta * jnp.sin(theta)
-        grad_omega = -dtheta_domega * eta * jnp.sin(theta)
-        grad_gamma = deta_dgamma * jnp.cos(theta)
-        return self.Params(grad_eps, grad_omega, grad_gamma)
+        def _loss_state(params: PyTree) -> Array:
+            return self.loss_state(self._state(params, t))
+
+        return jax.grad(_loss_state)(self.params_default)
 
     def grads_expect(self, t: float) -> PyTree:
-        theta = self._theta(t)
-        eta = self._eta(t)
-        # gradients of theta
-        dtheta_deps = 2 * jnp.sin(self.omega * t) / self.omega
-        dtheta_domega = 2 * self.eps / self.omega * t * jnp.cos(self.omega * t)
-        dtheta_domega -= 2 * self.eps / self.omega**2 * jnp.sin(self.omega * t)
-        # gradient of eta
-        deta_dgamma = -2 * t * eta
-        # gradients of sigma_z
-        grad_z_eps = -dtheta_deps * eta * jnp.sin(theta)
-        grad_z_omega = -dtheta_domega * eta * jnp.sin(theta)
-        grad_z_gamma = deta_dgamma * jnp.cos(theta)
-        # gradients of sigma_y
-        grad_y_eps = -dtheta_deps * eta * jnp.cos(theta)
-        grad_y_omega = -dtheta_domega * eta * jnp.cos(theta)
-        grad_y_gamma = -deta_dgamma * jnp.sin(theta)
-        # gradients of sigma_x
-        grad_x_eps = 0
-        grad_x_omega = 0
-        grad_x_gamma = 0
-        return self.Params(
-            [grad_x_eps, grad_y_eps, grad_z_eps],
-            [grad_x_omega, grad_y_omega, grad_z_omega],
-            [grad_x_gamma, grad_y_gamma, grad_z_gamma],
-        )
+        return jax.jacrev(self._expect)(self.params_default, t)
+
+    def hessian_expect(self, t: float) -> PyTree:
+        return jax.hessian(self._expect)(self.params_default, t)
 
 
 # # we choose `t_end` not coinciding with a full period (`t_end=1.0`) to avoid null

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from math import prod
+from typing import overload
 
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
 from .._utils import cdtype
-from ..qarrays.dense_qarray import DenseQArray
 from ..qarrays.layout import Layout, dense, get_layout
+from ..qarrays.materialized_qarray import MaterializedQArray
 from ..qarrays.qarray import QArray, QArrayLike, get_dims
-from ..qarrays.sparsedia_qarray import SparseDIAQArray
+from ..qarrays.sparsedia_dataarray import SparseDIADataArray
 from ..qarrays.utils import asqarray, init_dims, sparsedia_from_dict, stack, to_jax
 from .general import tensor
 
@@ -58,7 +59,7 @@ def eye(*dims: int, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (n, n))_ Identity operator, with _n = prod(dims)_.
+        (qarray of shape (n, n)): Identity operator, with _n = prod(dims)_.
 
     Examples:
         Single-mode $I_4$:
@@ -99,16 +100,16 @@ def eye_like(
     r"""Returns the identity operator in the Hilbert space of the input.
 
     Args:
-        x _(qarray-like of shape (..., n, 1) or (..., 1, n) or (..., n, n))_: Ket, bra
+        x (qarray-like of shape (..., n, 1) or (..., 1, n) or (..., n, n)): Ket, bra
             or operator.
-        dims _(tuple of ints or None)_: Dimensions of each subsystem in the composite
-            system Hilbert space tensor product. Defaults to `None` (`x.dims` if
-            available, single Hilbert space `dims=(n,)` otherwise).
-        layout _(dq.dense, dq.dia or None)_: Overrides the returned matrix layout. If
+        dims (tuple of ints or None): Hilbert space dimension of each subsystem.
+            Defaults to `None` (`x.dims` if available, individual system `dims=(n,)`
+            otherwise).
+        layout (dq.dense, dq.dia or None): Overrides the returned matrix layout. If
             `None`, the layout is the same as `x`.
 
     Returns:
-        _(qarray of shape (n, n))_ Identity operator, with _n = prod(dims)_.
+        (qarray of shape (n, n)): Identity operator, with _n = prod(dims)_.
 
     Examples:
         Single-mode $I_4$:
@@ -135,11 +136,11 @@ def eye_like(
         - [`dq.eye()`][dynamiqs.eye]: returns the identity operator.
     """
     xdims = get_dims(x)
-    layout = layout or x.layout
+    _layout = layout or getattr(x, 'layout', None)
     # todo: we should rather use a _get_shape util that never converts to a jax array
     x = to_jax(x)
     dims = init_dims(xdims, dims, x.shape)
-    return eye(*dims, layout=layout)
+    return eye(*dims, layout=_layout)
 
 
 def zeros(*dims: int, layout: Layout | None = None) -> QArray:
@@ -156,7 +157,7 @@ def zeros(*dims: int, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (n, n))_ Null operator, with _n = prod(dims)_.
+        (qarray of shape (n, n)): Null operator, with _n = prod(dims)_.
 
     Examples:
         Single-mode $0_4$:
@@ -188,7 +189,7 @@ def zeros(*dims: int, layout: Layout | None = None) -> QArray:
         return asqarray(array, dims=dims)
     else:
         diags = jnp.zeros((0, dim), dtype=cdtype())
-        return SparseDIAQArray(dims, False, (), diags)
+        return MaterializedQArray(dims, False, SparseDIADataArray((), diags))
 
 
 def zeros_like(
@@ -197,16 +198,16 @@ def zeros_like(
     r"""Returns the null operator in the Hilbert space of the input.
 
     Args:
-        x _(qarray-like of shape (..., n, 1) or (..., 1, n) or (..., n, n))_: Ket, bra
+        x (qarray-like of shape (..., n, 1) or (..., 1, n) or (..., n, n)): Ket, bra
             or operator.
-        dims _(tuple of ints or None)_: Dimensions of each subsystem in the composite
-            system Hilbert space tensor product. Defaults to `None` (`x.dims` if
-            available, single Hilbert space `dims=(n,)` otherwise).
-        layout _(dq.dense, dq.dia or None)_: Overrides the returned matrix layout. If
+        dims (tuple of ints or None): Hilbert space dimension of each subsystem.
+            Defaults to `None` (`x.dims` if available, individual system `dims=(n,)`
+            otherwise).
+        layout (dq.dense, dq.dia or None): Overrides the returned matrix layout. If
             `None`, the layout is the same as `x`.
 
     Returns:
-        _(qarray of shape (n, n))_ Null operator, with _n = prod(dims)_.
+        (qarray of shape (n, n)): Null operator, with _n = prod(dims)_.
 
     Examples:
         Single-mode $0_4$:
@@ -233,11 +234,17 @@ def zeros_like(
         - [`dq.zeros()`][dynamiqs.zeros]: returns the null operator.
     """
     xdims = get_dims(x)
-    layout = layout or x.layout
+    _layout = layout or getattr(x, 'layout', None)
     # todo: we should rather use a _get_shape util that never converts to a jax array
     x = to_jax(x)
     dims = init_dims(xdims, dims, x.shape)
-    return zeros(*dims, layout=layout)
+    return zeros(*dims, layout=_layout)
+
+
+@overload
+def destroy(dim: int, /, *, layout: Layout | None = None) -> QArray: ...
+@overload
+def destroy(*dims: int, layout: Layout | None = None) -> tuple[QArray, ...]: ...
 
 
 def destroy(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, ...]:
@@ -257,7 +264,7 @@ def destroy(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, 
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray or tuple of qarrays, each of shape (n, n))_ Annihilation operator(s),
+        (qarray or tuple of qarrays, each of shape (n, n)): Annihilation operator(s),
             with _n = prod(dims)_.
 
     Examples:
@@ -308,6 +315,12 @@ def destroy(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, 
     )
 
 
+@overload
+def create(dim: int, /, *, layout: Layout | None = None) -> QArray: ...
+@overload
+def create(*dims: int, layout: Layout | None = None) -> tuple[QArray, ...]: ...
+
+
 def create(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, ...]:
     r"""Returns a bosonic creation operator, or a tuple of creation operators for a
     multi-mode system.
@@ -325,7 +338,7 @@ def create(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, .
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray or tuple of qarrays, each of shape (n, n))_ Creation operator(s), with
+        (qarray or tuple of qarrays, each of shape (n, n)): Creation operator(s), with
             _n = prod(dims)_.
 
     Examples:
@@ -376,6 +389,12 @@ def create(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, .
     )
 
 
+@overload
+def number(dim: int, /, *, layout: Layout | None = None) -> QArray: ...
+@overload
+def number(*dims: int, layout: Layout | None = None) -> tuple[QArray, ...]: ...
+
+
 def number(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, ...]:
     r"""Returns the number operator of a bosonic mode, or a tuple of number operators
     for a multi-mode system.
@@ -394,7 +413,7 @@ def number(*dims: int, layout: Layout | None = None) -> QArray | tuple[QArray, .
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray or tuple of qarrays, each of shape (n, n))_ Number operator(s), with
+        (qarray or tuple of qarrays, each of shape (n, n)): Number operator(s), with
             _n = prod(dims)_.
 
     Examples:
@@ -456,7 +475,7 @@ def parity(dim: int, *, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (dim, dim))_ Parity operator.
+        (qarray of shape (dim, dim)): Parity operator.
 
     Examples:
         >>> dq.parity(4)
@@ -474,7 +493,7 @@ def parity(dim: int, *, layout: Layout | None = None) -> QArray:
         return sparsedia_from_dict({0: diag})
 
 
-def displace(dim: int, alpha: ArrayLike) -> DenseQArray:
+def displace(dim: int, alpha: ArrayLike) -> QArray:
     r"""Returns the displacement operator of complex amplitude $\alpha$.
 
     It is defined by
@@ -485,10 +504,10 @@ def displace(dim: int, alpha: ArrayLike) -> DenseQArray:
 
     Args:
         dim: Dimension of the Hilbert space.
-        alpha _(array-like of shape (...))_: Displacement amplitude.
+        alpha (array-like of shape (...)): Displacement amplitude.
 
     Returns:
-        _(qarray of shape (..., dim, dim))_ Displacement operator.
+        (qarray of shape (..., dim, dim)): Displacement operator.
 
     Examples:
         >>> dq.displace(4, 0.5)
@@ -506,7 +525,7 @@ def displace(dim: int, alpha: ArrayLike) -> DenseQArray:
     return (alpha * a.dag() - alpha.conj() * a).expm()
 
 
-def squeeze(dim: int, z: ArrayLike) -> DenseQArray:
+def squeeze(dim: int, z: ArrayLike) -> QArray:
     r"""Returns the squeezing operator of complex squeezing amplitude $z$.
 
     It is defined by
@@ -517,10 +536,10 @@ def squeeze(dim: int, z: ArrayLike) -> DenseQArray:
 
     Args:
         dim: Dimension of the Hilbert space.
-        z _(array-like of shape (...))_: Squeezing amplitude.
+        z (array-like of shape (...)): Squeezing amplitude.
 
     Returns:
-        _(qarray of shape (..., dim, dim))_ Squeezing operator.
+        (qarray of shape (..., dim, dim)): Squeezing operator.
 
     Examples:
         >>> dq.squeeze(4, 0.5)
@@ -535,23 +554,27 @@ def squeeze(dim: int, z: ArrayLike) -> DenseQArray:
     z = jnp.asarray(z, dtype=cdtype())
     z = z[..., None, None]  # (..., 1, 1)
     a = destroy(dim, layout=dense)  # (n, n)
-    a2 = a @ a
+    a2 = asqarray(a @ a)
     return (0.5 * (z.conj() * a2 - z * a2.dag())).expm()
 
 
-def quadrature(dim: int, phi: float, *, layout: Layout | None = None) -> QArray:
+def quadrature(
+    dim: int, phi: float, *, layout: Layout | None = None, hbar: float = 0.5
+) -> QArray:
     r"""Returns the quadrature operator of phase angle $\phi$.
 
-    It is defined by $x_\phi = (e^{i\phi} a^\dag + e^{-i\phi} a) / 2$, where $a$ and
-    $a^\dag$ are the annihilation and creation operators respectively.
+    It is defined by $x_\phi = \sqrt{\hbar/2}\,(e^{i\phi} a^\dag + e^{-i\phi} a)$,
+    where $a$ and $a^\dag$ are the annihilation and creation operators respectively.
 
     Args:
         dim: Dimension of the Hilbert space.
         phi: Phase angle.
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
+        hbar: Value of $\hbar$ in the commutation relation $[\hat{x}, \hat{p}]
+            = i\hbar$. Common choices are `0.5` (default), `1.0`, and `2.0`.
 
     Returns:
-        _(qarray of shape (dim, dim))_ Quadrature operator.
+        (qarray of shape (dim, dim)): Quadrature operator.
 
     Examples:
         >>> dq.quadrature(3, 0.0)
@@ -566,18 +589,21 @@ def quadrature(dim: int, phi: float, *, layout: Layout | None = None) -> QArray:
          [   ⋅       -0.+0.707j    ⋅      ]]
     """
     a = destroy(dim, layout=layout)
-    return 0.5 * (jnp.exp(1j * phi) * a.dag() + jnp.exp(-1j * phi) * a)
+    quadrature_op = jnp.exp(1j * phi) * a.dag() + jnp.exp(-1j * phi) * a
+    return jnp.sqrt(hbar / 2) * quadrature_op
 
 
-def position(dim: int, *, layout: Layout | None = None) -> QArray:
-    r"""Returns the position operator $x = (a^\dag + a) / 2$.
+def position(dim: int, *, layout: Layout | None = None, hbar: float = 0.5) -> QArray:
+    r"""Returns the position operator $x = \sqrt{\hbar/2}\,(a^\dag + a)$.
 
     Args:
         dim: Dimension of the Hilbert space.
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
+        hbar: Value of $\hbar$ in the commutation relation $[\hat{x}, \hat{p}]
+            = i\hbar$. Common choices are `0.5` (default), `1.0`, and `2.0`.
 
     Returns:
-        _(qarray of shape (dim, dim))_ Position operator.
+        (qarray of shape (dim, dim)): Position operator.
 
     Examples:
         >>> dq.position(3)
@@ -587,18 +613,21 @@ def position(dim: int, *, layout: Layout | None = None) -> QArray:
          [    ⋅     0.707+0.j     ⋅    ]]
     """
     a = destroy(dim, layout=layout)
-    return 0.5 * (a + a.dag())
+    position_op = a.dag() + a
+    return jnp.sqrt(hbar / 2) * position_op
 
 
-def momentum(dim: int, *, layout: Layout | None = None) -> QArray:
-    r"""Returns the momentum operator $p = i (a^\dag - a) / 2$.
+def momentum(dim: int, *, layout: Layout | None = None, hbar: float = 0.5) -> QArray:
+    r"""Returns the momentum operator $p = i\sqrt{\hbar/2}\,(a^\dag - a)$.
 
     Args:
         dim: Dimension of the Hilbert space.
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
+        hbar: Value of $\hbar$ in the commutation relation $[\hat{x}, \hat{p}]
+            = i\hbar$. Common choices are `0.5` (default), `1.0`, and `2.0`.
 
     Returns:
-        _(qarray of shape (dim, dim))_ Momentum operator.
+        (qarray of shape (dim, dim)): Momentum operator.
 
     Examples:
         >>> dq.momentum(3)
@@ -608,7 +637,8 @@ def momentum(dim: int, *, layout: Layout | None = None) -> QArray:
          [  ⋅       0.+0.707j   ⋅      ]]
     """
     a = destroy(dim, layout=layout)
-    return 0.5j * (a.dag() - a)
+    momentum_op = 1j * (a.dag() - a)
+    return jnp.sqrt(hbar / 2) * momentum_op
 
 
 def sigmax(*, layout: Layout | None = None) -> QArray:
@@ -620,7 +650,7 @@ def sigmax(*, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (2, 2))_ Pauli $\sigma_x$ operator.
+        (qarray of shape (2, 2)): Pauli $\sigma_x$ operator.
 
     Examples:
         >>> dq.sigmax()
@@ -633,7 +663,9 @@ def sigmax(*, layout: Layout | None = None) -> QArray:
         array = jnp.array([[0, 1], [1, 0]], dtype=cdtype())
         return asqarray(array)
     else:
-        return sparsedia_from_dict({-1: [1], 1: [1]}, dtype=cdtype())
+        return sparsedia_from_dict(
+            {-1: jnp.array([1]), 1: jnp.array([1])}, dtype=cdtype()
+        )
 
 
 def sigmay(*, layout: Layout | None = None) -> QArray:
@@ -645,7 +677,7 @@ def sigmay(*, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (2, 2))_ Pauli $\sigma_y$ operator.
+        (qarray of shape (2, 2)): Pauli $\sigma_y$ operator.
 
     Examples:
         >>> dq.sigmay()
@@ -658,7 +690,9 @@ def sigmay(*, layout: Layout | None = None) -> QArray:
         array = jnp.array([[0, -1j], [1j, 0]], dtype=cdtype())
         return asqarray(array)
     else:
-        return sparsedia_from_dict({-1: [1j], 1: [-1j]}, dtype=cdtype())
+        return sparsedia_from_dict(
+            {-1: jnp.array([1j]), 1: jnp.array([-1j])}, dtype=cdtype()
+        )
 
 
 def sigmaz(*, layout: Layout | None = None) -> QArray:
@@ -670,7 +704,7 @@ def sigmaz(*, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (2, 2))_ Pauli $\sigma_z$ operator.
+        (qarray of shape (2, 2)): Pauli $\sigma_z$ operator.
 
     Examples:
         >>> dq.sigmaz()
@@ -683,7 +717,7 @@ def sigmaz(*, layout: Layout | None = None) -> QArray:
         array = jnp.array([[1, 0], [0, -1]], dtype=cdtype())
         return asqarray(array)
     else:
-        return sparsedia_from_dict({0: [1, -1]}, dtype=cdtype())
+        return sparsedia_from_dict({0: jnp.array([1, -1])}, dtype=cdtype())
 
 
 def sigmap(*, layout: Layout | None = None) -> QArray:
@@ -695,7 +729,7 @@ def sigmap(*, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (2, 2))_ Pauli $\sigma_+$ operator.
+        (qarray of shape (2, 2)): Pauli $\sigma_+$ operator.
 
     Examples:
         >>> dq.sigmap()
@@ -709,7 +743,7 @@ def sigmap(*, layout: Layout | None = None) -> QArray:
         array = jnp.array([[0, 1], [0, 0]], dtype=cdtype())
         return asqarray(array)
     else:
-        return sparsedia_from_dict({1: [1]}, dtype=cdtype())
+        return sparsedia_from_dict({1: jnp.array([1])}, dtype=cdtype())
 
 
 def sigmam(*, layout: Layout | None = None) -> QArray:
@@ -721,7 +755,7 @@ def sigmam(*, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (2, 2))_ Pauli $\sigma_-$ operator.
+        (qarray of shape (2, 2)): Pauli $\sigma_-$ operator.
 
     Examples:
         >>> dq.sigmam()
@@ -735,7 +769,7 @@ def sigmam(*, layout: Layout | None = None) -> QArray:
         array = jnp.array([[0, 0], [1, 0]], dtype=cdtype())
         return asqarray(array)
     else:
-        return sparsedia_from_dict({-1: [1]}, dtype=cdtype())
+        return sparsedia_from_dict({-1: jnp.array([1])}, dtype=cdtype())
 
 
 def xyz(*, layout: Layout | None = None) -> QArray:
@@ -745,7 +779,7 @@ def xyz(*, layout: Layout | None = None) -> QArray:
         layout: Matrix layout (`dq.dense`, `dq.dia` or `None`).
 
     Returns:
-        _(qarray of shape (3, 2, 2))_ Pauli $\sigma_x$, $\sigma_y$ and $\sigma_z$
+        (qarray of shape (3, 2, 2)): Pauli $\sigma_x$, $\sigma_y$ and $\sigma_z$
             operators.
 
     Examples:
@@ -782,7 +816,7 @@ def hadamard(n: int = 1) -> QArray:
         n: Number of qubits to act on.
 
     Returns:
-        _(qarray of shape (2^n, 2^n))_ Hadamard transform operator.
+        (qarray of shape (2^n, 2^n)): Hadamard transform operator.
 
     Examples:
         >>> dq.hadamard()
@@ -813,10 +847,10 @@ def rx(theta: ArrayLike) -> QArray:
     $$
 
     Args:
-        theta _(array-like of shape (...))_: Rotation angle $\theta$ in radians.
+        theta (array-like of shape (...)): Rotation angle $\theta$ in radians.
 
     Returns:
-        _(qarray of shape (2, 2))_ $R_x(\theta)$ gate.
+        (qarray of shape (2, 2)): $R_x(\theta)$ gate.
 
     Examples:
         >>> dq.rx(jnp.pi)
@@ -846,10 +880,10 @@ def ry(theta: ArrayLike) -> QArray:
     $$
 
     Args:
-        theta _(array-like of shape (...))_: Rotation angle $\theta$ in radians.
+        theta (array-like of shape (...)): Rotation angle $\theta$ in radians.
 
     Returns:
-        _(qarray of shape (2, 2))_ $R_y(\theta)$ gate.
+        (qarray of shape (2, 2)): $R_y(\theta)$ gate.
 
     Examples:
         >>> dq.ry(jnp.pi)
@@ -879,10 +913,10 @@ def rz(theta: ArrayLike) -> QArray:
     $$
 
     Args:
-        theta _(array-like of shape (...))_: Rotation angle $\theta$ in radians.
+        theta (array-like of shape (...)): Rotation angle $\theta$ in radians.
 
     Returns:
-        _(qarray of shape (2, 2))_ $R_z(\theta)$ gate.
+        (qarray of shape (2, 2)): $R_z(\theta)$ gate.
 
     Examples:
         >>> dq.rz(jnp.pi)
@@ -908,7 +942,7 @@ def sgate() -> QArray:
     It is defined by $\text{S} = \begin{pmatrix} 1 & 0 \\ 0 & i \end{pmatrix}$.
 
     Returns:
-        _(qarray of shape (2, 2))_ $\text{S}$ gate.
+        (qarray of shape (2, 2)): $\text{S}$ gate.
 
     Examples:
         >>> dq.sgate()
@@ -927,7 +961,7 @@ def tgate() -> QArray:
     $\text{T} = \begin{pmatrix} 1 & 0 \\ 0 & e^{i\frac{\pi}{4}} \end{pmatrix}$.
 
     Returns:
-        _(qarray of shape (2, 2))_ $\text{T}$ gate.
+        (qarray of shape (2, 2)): $\text{T}$ gate.
 
     Examples:
         >>> dq.tgate()
@@ -953,7 +987,7 @@ def cnot() -> QArray:
     $$
 
     Returns:
-        _(qarray of shape (4, 4))_ $\text{CNOT}$ gate.
+        (qarray of shape (4, 4)): $\text{CNOT}$ gate.
 
     Examples:
         >>> dq.cnot()
@@ -987,7 +1021,7 @@ def toffoli() -> QArray:
     $$
 
     Returns:
-        _(qarray of shape (8, 8))_ $\text{Toffoli}$ gate.
+        (qarray of shape (8, 8)): $\text{Toffoli}$ gate.
 
     Examples:
         >>> dq.toffoli()
