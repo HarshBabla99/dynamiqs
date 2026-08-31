@@ -26,11 +26,13 @@ class CompositeTerm(eqx.Module):
     methods on :class:`CompositeQArray` delegate to a corresponding method here.
 
     Attributes:
-        operators: Per-subsystem local operators (one square :class:`MaterializedQArray`
-            per subsystem).
+        operators: Per-subsystem local operators (one :class:`MaterializedQArray` per
+            subsystem). Operators, kets and bras are all supported, so a term is not
+            necessarily square.
         coeff: Scalar coefficient; may be a JAX array for batched use. Defaults to 1.
     """
 
+    # TODO: maybe rename "operators" back to "factors"?
     operators: tuple[MaterializedQArray, ...]
     coeff: ArrayLike = 1.0
 
@@ -40,14 +42,6 @@ class CompositeTerm(eqx.Module):
         # check that there is at least one operator
         if not self.operators:
             raise ValueError('A `CompositeTerm` must have at least one operator.')
-
-        # check that all operators are square matrices
-        for operator in self.operators:
-            if operator.shape[-1] != operator.shape[-2]:
-                raise ValueError(
-                    'All operators of a `CompositeTerm` must be square matrices, but '
-                    f'got an operator of shape {operator.shape}.'
-                )
 
         # check that the batch shapes of the operators and of the coefficient are
         # broadcastable
@@ -90,9 +84,11 @@ class CompositeTerm(eqx.Module):
 
     @property
     def shape(self) -> tuple[int, ...]:
-        # (*batch, prod(d_k), prod(d_k)); batch axes broadcast across ops/coeff.
-        n = prod(operator.shape[-1] for operator in self.operators)
-        return (*self._broadcast_batch_shape(), n, n)
+        # (*batch, prod(n_k), prod(m_k)); batch axes broadcast across ops/coeff.
+        # Taking the axes seperately allows for kets, bras, or square operators.
+        n = prod(operator.shape[-2] for operator in self.operators)
+        m = prod(operator.shape[-1] for operator in self.operators)
+        return (*self._broadcast_batch_shape(), n, m)
 
     @property
     def layout(self) -> Layout:
