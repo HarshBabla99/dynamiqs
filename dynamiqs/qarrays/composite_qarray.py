@@ -158,9 +158,14 @@ class CompositeTerm(eqx.Module):
         raise NotImplementedError
 
     def norm(self, *, psd: bool = False) -> Array:
-        # LAZY if psd=False: ‖c·⊗A_k‖_F = |c|·Π_k‖A_k‖_F.
-        # psd=True: trace shortcut only if known PSD; otherwise materialize.
-        raise NotImplementedError
+        if psd:
+            return self.trace().real
+
+        # LAZY if psd=False: ‖c·⊗A_k‖ = |c|·Π_k‖A_k‖
+        # Forbenius norm if matrix, else L2 norm of bra/ket. 
+        return jnp.asarray(
+            jnp.abs(self.coeff) * prod(operator.norm() for operator in self.operators)
+        )
 
     def _eig(self) -> tuple[Array, MaterializedQArray]:
         # eigenvalues = c·Cartesian(λ_k), eigenvectors = ⊗V_k (materialized)
