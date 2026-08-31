@@ -346,8 +346,11 @@ class CompositeTerm(eqx.Module):
         )
         return CompositeTerm(operators, self.coeff * other.coeff)
 
-    def __and__(self, other: CompositeTerm) -> CompositeTerm:
+    def __and__(self, other: CompositeTerm | MaterializedQArray) -> CompositeTerm:
         # (c·⊗A_k)⊗(d·⊗B_l) = (c·d)·(A_*,B_*); tuple concat + coeff multiply.
+        if isinstance(other, MaterializedQArray):
+            return replace(self, operators=(*self.operators, other))
+
         if not isinstance(other, CompositeTerm):
             return NotImplemented
 
