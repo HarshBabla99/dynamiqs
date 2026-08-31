@@ -4,12 +4,11 @@ from functools import partial, reduce
 
 import jax
 import jax.numpy as jnp
-import numpy as np
 from jax import Array
 
 from .._checks import check_hermitian, check_shape
-from ..qarrays.qarray import QArray, QArrayLike, get_dims
-from ..qarrays.utils import asqarray, init_dims, to_jax
+from ..qarrays.qarray import QArray, QArrayLike
+from ..qarrays.utils import asqarray, to_jax
 
 __all__ = [
     'bloch_coordinates',
@@ -276,11 +275,6 @@ def tracemm(x: QArrayLike, y: QArrayLike) -> Array:
     return (x.to_jax() * y.to_jax().mT).sum((-2, -1))
 
 
-def _hdim(x: QArrayLike) -> int:
-    x = asqarray(x)
-    return x.shape[-2] if isket(x) else x.shape[-1]
-
-
 @partial(jax.jit, static_argnums=(1, 2))
 def ptrace(
     x: QArrayLike, keep: int | tuple[int, ...], dims: tuple[int, ...] | None = None
@@ -330,61 +324,11 @@ def ptrace(
         [[0.5 0. ]
          [0.  0.5]]
     """
-    xdims = get_dims(x)
-    x = to_jax(x)
-    dims = init_dims(xdims, dims, x.shape)
+    x = asqarray(x, dims=dims)
     check_shape(x, 'x', '(..., n, 1)', '(..., 1, n)', '(..., n, n)')
 
-    # convert keep and dims to numpy arrays
-    _keep = np.asarray([keep] if isinstance(keep, int) else keep)  # e.g. [1, 2]
-    _dims = np.asarray(dims)  # e.g. [20, 2, 5]
-    ndims = len(_dims)  # e.g. 3
-
-    # check that input dimensions match
-    hdim = _hdim(x)
-    prod_dims = np.prod(_dims)
-    if prod_dims != hdim:
-        dims_prod_str = '*'.join(str(d) for d in _dims) + f'={prod_dims}'
-        raise ValueError(
-            'Argument `dims` must match the Hilbert space dimension of `x` of'
-            f' {hdim}, but the product of its values is {dims_prod_str}.'
-        )
-    if np.any(_keep < 0) or np.any(_keep > len(_dims) - 1):
-        raise ValueError(
-            'Argument `keep` must match the Hilbert space structure specified by'
-            ' `dims`.'
-        )
-
-    # sort keep
-    _keep.sort()
-
-    # create einsum alphabet
-    alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
-
-    # compute einsum equations
-    eq1 = alphabet[:ndims]  # e.g. 'abc'
-    unused = iter(alphabet[ndims:])
-    eq2 = ''.join(
-        [next(unused) if i in _keep else eq1[i] for i in range(ndims)]
-    )  # e.g. 'ade'
-
-    bshape = x.shape[:-2]
-
-    # trace out x over unkept dimensions
-    if isket(x) or isbra(x):
-        x = x.reshape(*bshape, *_dims)  # e.g. (..., 20, 2, 5)
-        eq = f'...{eq1},...{eq2}'  # e.g. '...abc,...ade'
-        x = jnp.einsum(eq, x, x.conj())  # e.g. (..., 2, 5, 2, 5)
-    else:
-        x = x.reshape(*bshape, *_dims, *_dims)  # e.g. (..., 20, 2, 5, 20, 2, 5)
-        eq = f'...{eq1}{eq2}'  # e.g. '...abcade'
-        x = jnp.einsum(eq, x)  # e.g. (..., 2, 5, 2, 5)
-
-    new_dims = tuple(_dims[_keep].tolist())
-    prod_new_dims = np.prod(new_dims)  # e.g. 10
-    x = x.reshape(*bshape, prod_new_dims, prod_new_dims)  # e.g. (..., 10, 10)
-
-    return asqarray(x, dims=new_dims)
+    keep = (keep,) if isinstance(keep, int) else keep
+    return x.ptrace(*keep)
 
 
 def tensor(*args: QArrayLike) -> QArray:

@@ -425,7 +425,11 @@ class QArray(eqx.Module):
 
     @abstractmethod
     def ptrace(self, *keep: int) -> QArray:
-        pass
+        if any(k < 0 or k > len(self.dims) - 1 for k in keep):
+            raise ValueError(
+                'Argument `keep` must match the Hilbert space structure specified by '
+                f'`dims`, but got keep={keep} and dims={self.dims}.'
+            )
 
     def cosm(self) -> QArray:
         from ..utils import cosm  # noqa: PLC0415

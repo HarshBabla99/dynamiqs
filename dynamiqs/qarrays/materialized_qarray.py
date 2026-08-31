@@ -182,9 +182,45 @@ class MaterializedQArray(QArray):
     # === Quantum methods ===
 
     def ptrace(self, *keep: int) -> QArray:
-        from ..utils.general import ptrace  # noqa: PLC0415
+        from .utils import asqarray  # noqa: PLC0415
 
-        return ptrace(self.data.to_jax(), keep, self.dims)
+        super().ptrace(*keep)
+
+        ndims = len(self.dims)  # e.g. 3
+
+        # sort keep
+        keep = tuple(sorted(keep))  # e.g. (1, 2)
+
+        # create einsum alphabet
+        alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+        # compute einsum equations
+        eq1 = alphabet[:ndims]  # e.g. 'abc'
+        unused = iter(alphabet[ndims:])
+        eq2 = ''.join(
+            [next(unused) if i in keep else eq1[i] for i in range(ndims)]
+        )  # e.g. 'ade'
+
+        bshape = self.shape[:-2]
+
+        # trace out x over unkept dimensions
+        x = self.data.to_jax()
+        if self.isket() or self.isbra():
+            x = x.reshape(*bshape, *self.dims)  # e.g. (..., 20, 2, 5)
+            eq = f'...{eq1},...{eq2}'  # e.g. '...abc,...ade'
+            x = jnp.einsum(eq, x, x.conj())  # e.g. (..., 2, 5, 2, 5)
+        else:
+            x = x.reshape(
+                *bshape, *self.dims, *self.dims
+            )  # e.g. (..., 20, 2, 5, 20, 2, 5)
+            eq = f'...{eq1}{eq2}'  # e.g. '...abcade'
+            x = jnp.einsum(eq, x)  # e.g. (..., 2, 5, 2, 5)
+
+        new_dims = tuple(self.dims[i] for i in keep)  # e.g. (2, 5)
+        prod_new_dims = prod(new_dims)  # e.g. 10
+        x = x.reshape(*bshape, prod_new_dims, prod_new_dims)  # e.g. (..., 10, 10)
+
+        return asqarray(x, dims=new_dims)
 
     def to_qutip(self) -> Qobj | list[Qobj]:
         from .dense_dataarray import array_to_qobj_list  # noqa: PLC0415
