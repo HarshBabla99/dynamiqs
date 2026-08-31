@@ -168,22 +168,90 @@ class CompositeTerm(eqx.Module):
             jnp.abs(self.coeff) * prod(operator.norm() for operator in self.operators)
         )
 
+    def _combine_evals(self, evals: list[Array]) -> Array:
+        """Eigenvalues of the CompositeTerm are simply the permutations of the
+        per-operator eigenvalues. These can simply be combined by an outer product.
+
+        Args:
+            evals: List of eigenvalues, `evals[i]` being an Array of eigenvalues for
+                operator `i`.
+        """
+        # get all permutations of evals, across the subsystems
+        # similar to .dense_dataarray._bkron, but 1D
+        _flattened_outer_prod = jnp.vectorize(jnp.kron, signature='(a),(b)->(ab)')
+        composite_term_evals = reduce(_flattened_outer_prod, evals)
+
+        # for batched coeffs, add a trailing dim to broadcast against eval axis
+        coeff = self.coeff
+        if jnp.ndim(coeff) > 0:
+            coeff = jnp.asarray(coeff)[..., None]
+        return jnp.asarray(coeff * composite_term_evals)
+
     def _eig(self) -> tuple[Array, MaterializedQArray]:
         # eigenvalues = c·Cartesian(λ_k), eigenvectors = ⊗V_k (materialized)
         # → each op's ._eig().
-        raise NotImplementedError
+        evals, evecs = [], []
+        for operator in self.operators:
+            operator_evals, operator_evecs = operator._eig()
+            evals.append(operator_evals)
+            evecs.append(operator_evecs)
+
+        # `jnp.linalg.eig` does not guarantee an ordering, so we don't need to either
+        # TODO: evecs can be a list of CompositeQArrays
+        evals = self._combine_evals(evals)
+        evecs = reduce(lambda x, y: x & y, evecs)
+
+        # for batched coeffs, _combine_evals introduces batch dims for evals
+        # do the same for evecs.
+        bshape = self._broadcast_batch_shape()
+        evecs = evecs.broadcast_to(*bshape, *evecs.shape[-2:])
+
+        return evals, cast('MaterializedQArray', evecs)
 
     def _eigh(self) -> tuple[Array, Array]:
         # Hermitian variant; returns raw JAX arrays → each op's ._eigh().
-        raise NotImplementedError
+        from .dense_dataarray import _bkron  # noqa: PLC0415
+
+        # NOTE: assumes each operator is Hermitian
+        # as explained in isherm, a Hermitian CompositeTerm could be made up of 
+        # an even number of anti-Hermitian ops. 
+        evals, evecs = [], []
+        for operator in self.operators:
+            operator_evals, operator_evecs = operator._eigh()
+            evals.append(operator_evals)
+            evecs.append(operator_evecs)
+
+        # NOTE: DenseDataArray._eigh() returns evecs as a JAX Array, not QArray
+        # Unlike _eig above, we can't use __and__ directly.
+        # TODO: evecs can be a list of CompositeQArrays.
+        # NOTE: the imag values of complex coeffs are silently dropped
+        evals = self._combine_evals(evals).real
+        evecs = reduce(_bkron, evecs)
+
+        # for batched coeffs, _combine_evals introduces batch dims for evals
+        # do the same for evecs.
+        bshape = self._broadcast_batch_shape()
+        evecs = jnp.broadcast_to(evecs, (*bshape, *evecs.shape[-2:]))
+
+        # sort in ascending order
+        order = jnp.argsort(evals, axis=-1)
+        evals = jnp.take_along_axis(evals, order, axis=-1)
+        evecs = jnp.take_along_axis(evecs, order[..., None, :], axis=-1)
+
+        # NOTE: returns JAX Array, following DenseDataArray._eigh()
+        return evals, evecs
 
     def _eigvals(self) -> Array:
         # c · Cartesian product of per-op eigenvalues → each op's ._eigvals().
-        raise NotImplementedError
+        return self._combine_evals([operator._eigvals() for operator in self.operators])
 
     def _eigvalsh(self) -> Array:
         # Hermitian variant → each op's ._eigvalsh().
-        raise NotImplementedError
+        # NOTE: the imag values of complex coeffs are silently dropped
+        evals = self._combine_evals(
+            [operator._eigvalsh() for operator in self.operators]
+        ).real
+        return jnp.sort(evals, axis=-1)
 
     def devices(self) -> set[Device]:
         # the operators are not required to share a device, so all of them are reported
