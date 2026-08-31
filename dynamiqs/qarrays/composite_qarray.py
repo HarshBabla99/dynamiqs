@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import reduce
 from math import prod
-from typing import cast, overload
+from typing import cast, get_args, overload
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -12,7 +12,6 @@ from jax import Array, Device
 from jaxtyping import ArrayLike
 from qutip import Qobj
 
-from .._utils import is_batched_scalar
 from .dataarray import IndexType
 from .layout import Layout, promote_layouts
 from .materialized_qarray import MaterializedQArray
@@ -307,17 +306,10 @@ class CompositeTerm(eqx.Module):
 
     # === Arithmetic ===
 
-    def __mul__(self, y: QArrayLike) -> CompositeTerm:
+    def __mul__(self, y: ArrayLike) -> CompositeTerm:
         # y·(c·⊗A_k) = (y·c)·⊗A_k; only touches coeff.
-        if not is_batched_scalar(y):
+        if not isinstance(y, get_args(ArrayLike)):
             return NotImplemented
-
-        # a batched scalar is shaped (1,) or (..., 1, 1) so that it broadcasts against
-        # the matrix axes of a qarray. A coefficient has no matrix axes, so these
-        # trailing dimensions are dropped before it is multiplied in.
-        if jnp.ndim(y) > 0:
-            y = jnp.asarray(y)
-            y = y[0] if y.shape == (1,) else y[..., 0, 0]
 
         return replace(self, coeff=self.coeff * y)
 
