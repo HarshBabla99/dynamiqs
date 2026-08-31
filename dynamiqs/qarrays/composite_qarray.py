@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from functools import reduce
+from math import prod
 from typing import overload
 
 import equinox as eqx
@@ -10,7 +13,7 @@ from jaxtyping import ArrayLike
 from qutip import Qobj
 
 from .dataarray import IndexType
-from .layout import Layout
+from .layout import Layout, promote_layouts
 from .materialized_qarray import MaterializedQArray
 from .qarray import QArray, QArrayLike
 
@@ -31,43 +34,119 @@ class CompositeTerm(eqx.Module):
     operators: tuple[MaterializedQArray, ...]
     coeff: ArrayLike = 1.0
 
+    # === Lifecycle ===
+
+    def __check_init__(self):
+        # check that there is at least one operator
+        if not self.operators:
+            raise ValueError('A `CompositeTerm` must have at least one operator.')
+
+        # check that all operators are square matrices
+        for operator in self.operators:
+            if operator.shape[-1] != operator.shape[-2]:
+                raise ValueError(
+                    'All operators of a `CompositeTerm` must be square matrices, but '
+                    f'got an operator of shape {operator.shape}.'
+                )
+
+        # check that all operators have the same dtype and devices
+        first_operator = self.operators[0]
+        for operator in self.operators:
+            if operator.dtype != first_operator.dtype:
+                raise ValueError(
+                    'All operators of a `CompositeTerm` must have the same dtype.'
+                )
+            if operator.devices() != first_operator.devices():
+                raise ValueError(
+                    'All operators of a `CompositeTerm` must be on the same device.'
+                )
+
+        # check that the batch shapes of the operators and of the coefficient are
+        # broadcastable
+        try:
+            self._broadcast_batch_shape()
+        except ValueError as e:
+            raise ValueError(
+                'All operators of a `CompositeTerm` must have broadcastable batch '
+                'shapes, and the coefficient must be broadcastable against them.'
+            ) from e
+
+    def _broadcast_batch_shape(self) -> tuple[int, ...]:
+        """Return the broadcast batch shape of the operators and of the coefficient."""
+        return jnp.broadcast_shapes(
+            *(operator.shape[:-2] for operator in self.operators), jnp.shape(self.coeff)
+        )
+
     # === Materialization ===
 
     def _materialize(self) -> MaterializedQArray:
         """Coeff * (A_0 ⊗ … ⊗ A_{N-1}); reduce via op.__and__ then __mul__(coeff)."""
-        raise NotImplementedError
+        operator = reduce(lambda x, y: x & y, self.operators)
+
+        # a batched coefficient must be given two trailing dimensions to multiply the
+        # matrix axes of the operator
+        coeff = self.coeff
+        if jnp.ndim(coeff) > 0:
+            coeff = jnp.asarray(coeff)[..., None, None]
+
+        return operator * coeff
 
     # === Properties ===
 
     @property
     def dtype(self) -> jnp.dtype:
         # jnp.result_type over each op's .dtype + coeff.
-        raise NotImplementedError
+        return jnp.result_type(
+            *(operator.dtype for operator in self.operators), self.coeff
+        )
 
     @property
     def shape(self) -> tuple[int, ...]:
         # (*batch, prod(d_k), prod(d_k)); batch axes broadcast across ops/coeff.
-        raise NotImplementedError
+        n = prod(operator.shape[-1] for operator in self.operators)
+        return (*self._broadcast_batch_shape(), n, n)
 
     @property
     def layout(self) -> Layout:
         # aggregate over op's .layout (e.g. dense if any op is dense, else dia).
-        raise NotImplementedError
+        return reduce(promote_layouts, (operator.layout for operator in self.operators))
 
     @property
     def mT(self) -> CompositeTerm:
         # (c·⊗A_k)^T = c·⊗A_k^T → each op's .mT.
-        raise NotImplementedError
+        operators = tuple(operator.mT for operator in self.operators)
+        return replace(self, operators=operators)
 
     # === Array methods ===
 
     def conj(self) -> CompositeTerm:
         # conj(c·⊗A_k) = conj(c)·⊗conj(A_k) → each op's .conj() + jnp.conj(coeff).
-        raise NotImplementedError
+        operators = tuple(operator.conj() for operator in self.operators)
+        return replace(self, operators=operators, coeff=jnp.conj(self.coeff))
 
     def broadcast_to(self, *shape: int) -> CompositeTerm:
         # batch axes only → each op's .broadcast_to() + jnp.broadcast_to(coeff, ...).
-        raise NotImplementedError
+        if shape[-2:] != self.shape[-2:]:
+            raise ValueError(
+                f'Cannot broadcast to shape {shape} because the last two dimensions do '
+                f'not match current shape dimensions, {self.shape}.'
+            )
+
+        # broadcasting the coefficient alone is enough and the operators are untouched
+        bshape = shape[:-2]
+        try:
+            broadcastable = (
+                jnp.broadcast_shapes(self._broadcast_batch_shape(), bshape) == bshape
+            )
+        except ValueError:
+            broadcastable = False
+        if not broadcastable:
+            raise ValueError(
+                f'Cannot broadcast to shape {shape} because it is incompatible with '
+                f'the current shape {self.shape}.'
+            )
+
+        return replace(self, coeff=jnp.broadcast_to(self.coeff, bshape))
 
     def trace(self) -> Array:
         # tr(c·⊗A_k) = c·Π_k tr(A_k) → each op's .trace().
