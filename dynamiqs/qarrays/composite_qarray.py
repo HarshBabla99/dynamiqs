@@ -152,10 +152,29 @@ class CompositeTerm(eqx.Module):
         operators = tuple(operator.powm(n) for operator in self.operators)
         return replace(self, operators=operators, coeff=self.coeff**n)
 
-    def expm(self, *, max_squarings: int = 16) -> MaterializedQArray:
-        # exp(c·⊗A_k) = (⊗V_k)·diag(exp(c·∏λ_k))·(⊗V_k)^†; returns MaterializedQArray.
-        # → each op's ._eigh().
-        raise NotImplementedError
+    def expm(self) -> MaterializedQArray:
+        # exp(c·⊗A_k) = (⊗V_k)·diag(exp(c·∏λ_k))·(⊗V_k)^-1; returns a
+        # MaterializedQArray. Assumes that each operator is diagonalizable.
+        from .dense_dataarray import _bkron  # noqa: PLC0415
+        from .utils import asqarray  # noqa: PLC0415
+
+        # NOTE: Diagonalizes each subsystem using _eig()
+        evals, evecs = [], []
+        for operator in self.operators:
+            operator_evals, operator_evecs = operator._eig()
+            evals.append(operator_evals)
+            evecs.append(operator_evecs.to_jax())
+
+        # (⊗V_k)^-1 = ⊗(V_k^-1), so invert for each subsystem independently
+        V = reduce(_bkron, evecs)
+        Vinv = reduce(_bkron, [jnp.linalg.inv(evec) for evec in evecs])
+
+        # exp(V·Λ·V^-1) = V·exp(Λ)·V^-1, where multiplying by the diagonal exp(Λ) is
+        # just a scaling of the columns of V
+        data = (V * jnp.exp(self._combine_evals(evals))[..., None, :]) @ Vinv
+
+        dims = tuple(d for operator in self.operators for d in operator.dims)
+        return cast('MaterializedQArray', asqarray(data, dims=dims))
 
     def norm(self, *, psd: bool = False) -> Array:
         if psd:
