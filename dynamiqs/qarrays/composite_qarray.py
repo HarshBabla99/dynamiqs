@@ -49,18 +49,6 @@ class CompositeTerm(eqx.Module):
                     f'got an operator of shape {operator.shape}.'
                 )
 
-        # check that all operators have the same dtype and devices
-        first_operator = self.operators[0]
-        for operator in self.operators:
-            if operator.dtype != first_operator.dtype:
-                raise ValueError(
-                    'All operators of a `CompositeTerm` must have the same dtype.'
-                )
-            if operator.devices() != first_operator.devices():
-                raise ValueError(
-                    'All operators of a `CompositeTerm` must be on the same device.'
-                )
-
         # check that the batch shapes of the operators and of the coefficient are
         # broadcastable
         try:
