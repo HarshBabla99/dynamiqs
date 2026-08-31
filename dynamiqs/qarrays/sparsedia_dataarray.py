@@ -202,7 +202,7 @@ class SparseDIADataArray(DataArray):
         return self.asdense()._eigvalsh()
 
     def devices(self) -> set[jax.Device]:
-        raise NotImplementedError
+        return self.diags.devices()
 
     def isherm(self, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
         return self.asdense().isherm(rtol=rtol, atol=atol)
