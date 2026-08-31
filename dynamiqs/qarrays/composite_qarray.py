@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import reduce
 from math import prod
-from typing import overload
+from typing import cast, overload
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -89,7 +89,7 @@ class CompositeTerm(eqx.Module):
         if jnp.ndim(coeff) > 0:
             coeff = jnp.asarray(coeff)[..., None, None]
 
-        return operator * coeff
+        return cast(MaterializedQArray, operator * coeff)
 
     # === Properties ===
 
