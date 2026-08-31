@@ -322,7 +322,6 @@ class CompositeTerm(eqx.Module):
         return replace(self, coeff=self.coeff * y)
 
     def __matmul__(self, other: CompositeTerm) -> CompositeTerm:
-        # is the main mpoint of the feature
         # (c·⊗A_k)·(d·⊗B_k) = (c·d)·⊗(A_k·B_k), since the tensor product acts on
         # different subsystems: the two terms are multiplied subsystem by subsystem.
         if not isinstance(other, CompositeTerm):
