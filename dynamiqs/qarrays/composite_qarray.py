@@ -294,7 +294,23 @@ class CompositeTerm(eqx.Module):
     def ptrace(self, keep: tuple[int, ...]) -> CompositeTerm:
         # ptrace_{∉keep}(c·⊗A_j) = c·(Π_{j∉keep} tr(A_j))·⊗_{k∈keep} A_k
         # → .trace() on each traced-out op.
-        raise NotImplementedError
+        keep = tuple(sorted(keep))
+        dont_keep = (i for i in range(len(self.operators)) if i not in keep)
+
+        # turn all the operators to density matrices
+        # if composite ket is turned into a dm, square the coeff
+        operators = tuple(op.todm() for op in self.operators)
+        coeff = self.coeff
+        if self.shape[-1] == 1 or self.shape[-2] == 1:
+            coeff = coeff * jnp.conj(coeff)
+
+        # each traced-out operator contributes a scalar,
+        # which can be multiplied into the coefficient
+        coeff = coeff * prod(operators[i].trace() for i in dont_keep)
+        operators = cast(
+            'tuple[MaterializedQArray, ...]', tuple(operators[i] for i in keep)
+        )
+        return replace(self, operators=operators, coeff=coeff)
 
     # === Indexing ===
 
