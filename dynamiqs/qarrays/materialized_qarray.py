@@ -184,7 +184,7 @@ class MaterializedQArray(QArray):
     def ptrace(self, *keep: int) -> QArray:
         from .utils import asqarray  # noqa: PLC0415
 
-        super().ptrace(*keep)
+        self._check_ptrace_keep(keep)
 
         ndims = len(self.dims)  # e.g. 3
 
