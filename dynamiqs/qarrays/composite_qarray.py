@@ -12,6 +12,7 @@ from jax import Array, Device
 from jaxtyping import ArrayLike
 from qutip import Qobj
 
+from .._utils import is_batched_scalar
 from .dataarray import IndexType
 from .layout import Layout, promote_layouts
 from .materialized_qarray import MaterializedQArray
@@ -146,7 +147,8 @@ class CompositeTerm(eqx.Module):
 
     def powm(self, n: int) -> CompositeTerm:
         # (c·⊗A_k)^n = c^n·⊗A_k^n → each op's .powm(n).
-        raise NotImplementedError
+        operators = tuple(operator.powm(n) for operator in self.operators)
+        return replace(self, operators=operators, coeff=self.coeff**n)
 
     def expm(self, *, max_squarings: int = 16) -> MaterializedQArray:
         # exp(c·⊗A_k) = (⊗V_k)·diag(exp(c·∏λ_k))·(⊗V_k)^†; returns MaterializedQArray.
@@ -206,15 +208,50 @@ class CompositeTerm(eqx.Module):
 
     def __mul__(self, y: QArrayLike) -> CompositeTerm:
         # y·(c·⊗A_k) = (y·c)·⊗A_k; only touches coeff.
-        raise NotImplementedError
+        if not is_batched_scalar(y):
+            return NotImplemented
+
+        # a batched scalar is shaped (1,) or (..., 1, 1) so that it broadcasts against
+        # the matrix axes of a qarray. A coefficient has no matrix axes, so these
+        # trailing dimensions are dropped before it is multiplied in.
+        if jnp.ndim(y) > 0:
+            y = jnp.asarray(y)
+            y = y[0] if y.shape == (1,) else y[..., 0, 0]
+
+        return replace(self, coeff=self.coeff * y)
 
     def __matmul__(self, other: CompositeTerm) -> CompositeTerm:
         # is the main mpoint of the feature
-        raise NotImplementedError
+        # (c·⊗A_k)·(d·⊗B_k) = (c·d)·⊗(A_k·B_k), since the tensor product acts on
+        # different subsystems: the two terms are multiplied subsystem by subsystem.
+        if not isinstance(other, CompositeTerm):
+            return NotImplemented
+
+        if len(self.operators) != len(other.operators):
+            raise ValueError(
+                'Cannot matrix multiply two `CompositeTerm`s defined over a different '
+                f'number of subsystems, but got {len(self.operators)} and '
+                f'{len(other.operators)}.'
+            )
+
+        operators = cast(
+            'tuple[MaterializedQArray, ...]',
+            tuple(
+                operator_a @ operator_b
+                for operator_a, operator_b in zip(
+                    self.operators, other.operators, strict=True
+                )
+            ),
+        )
+        return CompositeTerm(operators, self.coeff * other.coeff)
 
     def __and__(self, other: CompositeTerm) -> CompositeTerm:
         # (c·⊗A_k)⊗(d·⊗B_l) = (c·d)·(A_*,B_*); tuple concat + coeff multiply.
-        raise NotImplementedError
+        if not isinstance(other, CompositeTerm):
+            return NotImplemented
+
+        operators = self.operators + other.operators
+        return CompositeTerm(operators, self.coeff * other.coeff)
 
 
 class CompositeQArray(QArray):
