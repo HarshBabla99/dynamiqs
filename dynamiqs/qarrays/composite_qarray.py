@@ -213,8 +213,8 @@ class CompositeTerm(eqx.Module):
         from .dense_dataarray import _bkron  # noqa: PLC0415
 
         # NOTE: assumes each operator is Hermitian
-        # as explained in isherm, a Hermitian CompositeTerm could be made up of 
-        # an even number of anti-Hermitian ops. 
+        # as explained in isherm, a Hermitian CompositeTerm could be made up of
+        # an even number of anti-Hermitian ops.
         evals, evecs = [], []
         for operator in self.operators:
             operator_evals, operator_evecs = operator._eigh()
