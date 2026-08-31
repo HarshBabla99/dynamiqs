@@ -335,7 +335,7 @@ class CompositeTerm(eqx.Module):
                 )
             ),
         )
-        return CompositeTerm(operators, self.coeff * other.coeff)
+        return replace(self, operators=operators, coeff=self.coeff * other.coeff)
 
     def __and__(self, other: CompositeTerm | MaterializedQArray) -> CompositeTerm:
         # (c·⊗A_k)⊗(d·⊗B_l) = (c·d)·(A_*,B_*); tuple concat + coeff multiply.
@@ -346,7 +346,7 @@ class CompositeTerm(eqx.Module):
             return NotImplemented
 
         operators = self.operators + other.operators
-        return CompositeTerm(operators, self.coeff * other.coeff)
+        return replace(self, operators=operators, coeff=self.coeff * other.coeff)
 
 
 class CompositeQArray(QArray):
