@@ -135,7 +135,9 @@ class CompositeTerm(eqx.Module):
 
     def trace(self) -> Array:
         # tr(c·⊗A_k) = c·Π_k tr(A_k) → each op's .trace().
-        raise NotImplementedError
+        return jnp.asarray(
+            self.coeff * prod(operator.trace() for operator in self.operators)
+        )
 
     def sum(self, axis: int | tuple[int, ...] | None = None) -> CompositeTerm:
         # MATERIALIZE → _materialize().sum(axis).
@@ -178,17 +180,23 @@ class CompositeTerm(eqx.Module):
         raise NotImplementedError
 
     def devices(self) -> set[Device]:
-        # must all be the same by convention ?
-        raise NotImplementedError
+        # the operators are not required to share a device, so all of them are reported
+        return set().union(*(operator.devices() for operator in self.operators))
 
     def isherm(self, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
         # Sufficient (not necessary): coeff real AND all ops .isherm().
-        # False here is not conclusive for multi-term CompositeQArray.
-        raise NotImplementedError
+        # False here is not conclusive for a CompositeTerm
+        # e.g. the product of two anti-Hermitian operators is Hermitian.
+        isherm = jnp.all(jnp.isreal(self.coeff))
+        for operator in self.operators:
+            isherm = jnp.logical_and(isherm, operator.isherm(rtol, atol))
+        return cast('bool', isherm)
 
     def block_until_ready(self) -> CompositeTerm:
         # → each op's .block_until_ready().
-        raise NotImplementedError
+        for operator in self.operators:
+            operator.block_until_ready()
+        return self
 
     # === Quantum methods ===
 
