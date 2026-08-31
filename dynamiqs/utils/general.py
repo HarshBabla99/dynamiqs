@@ -8,7 +8,7 @@ from jax import Array
 
 from .._checks import check_hermitian, check_shape
 from ..qarrays.qarray import QArray, QArrayLike
-from ..qarrays.utils import asqarray, to_jax
+from ..qarrays.utils import asqarray, init_dims, to_jax
 
 __all__ = [
     'bloch_coordinates',
@@ -324,6 +324,9 @@ def ptrace(
         [[0.5 0. ]
          [0.  0.5]]
     """
+    # use `init_dims` to warn about conflicting dims
+    if isinstance(x, QArray):
+        init_dims(x.dims, dims, x.shape)
     x = asqarray(x, dims=dims)
     check_shape(x, 'x', '(..., n, 1)', '(..., 1, n)', '(..., n, n)')
 
