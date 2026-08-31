@@ -162,7 +162,8 @@ class CompositeTerm(eqx.Module):
             return self.trace().real
 
         # LAZY if psd=False: ‖c·⊗A_k‖ = |c|·Π_k‖A_k‖
-        # Forbenius norm if matrix, else L2 norm of bra/ket. 
+        # trace norm if matrix, else L2 norm of bra/ket
+        # both are multiplicative under the tensor product
         return jnp.asarray(
             jnp.abs(self.coeff) * prod(operator.norm() for operator in self.operators)
         )
