@@ -85,7 +85,7 @@ class CompositeTerm(eqx.Module):
     @property
     def shape(self) -> tuple[int, ...]:
         # (*batch, prod(n_k), prod(m_k)); batch axes broadcast across ops/coeff.
-        # Taking the axes seperately allows for kets, bras, or square operators.
+        # Taking the axes separately allows for kets, bras, or square operators.
         n = prod(operator.shape[-2] for operator in self.operators)
         m = prod(operator.shape[-1] for operator in self.operators)
         return (*self._broadcast_batch_shape(), n, m)
