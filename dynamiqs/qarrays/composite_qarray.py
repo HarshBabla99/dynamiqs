@@ -138,9 +138,8 @@ class CompositeTerm(eqx.Module):
             self.coeff * prod(operator.trace() for operator in self.operators)
         )
 
-    def sum(self, axis: int | tuple[int, ...] | None = None) -> CompositeTerm:
-        # MATERIALIZE → _materialize().sum(axis).
-        raise NotImplementedError
+    def sum(self, axis: int | tuple[int, ...] | None = None) -> QArray | Array:
+        return self._materialize().sum(axis)
 
     def squeeze(self, axis: int | tuple[int, ...] | None = None) -> CompositeTerm:
         # batch axes only → each op's .squeeze(axis) + jnp.squeeze(coeff, axis).
