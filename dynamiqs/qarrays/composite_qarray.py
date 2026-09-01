@@ -91,6 +91,10 @@ class CompositeTerm(eqx.Module):
         return (*self._broadcast_batch_shape(), n, m)
 
     @property
+    def dims(self) -> tuple[int, ...]:
+        return tuple(d for operator in self.operators for d in operator.dims)
+
+    @property
     def layout(self) -> Layout:
         # aggregate over op's .layout (e.g. dense if any op is dense, else dia).
         return reduce(promote_layouts, (operator.layout for operator in self.operators))
