@@ -136,6 +136,17 @@ class CompositeTerm(eqx.Module):
 
         return replace(self, coeff=jnp.broadcast_to(self.coeff, bshape))
 
+    def swapaxes(self, axis1: int, axis2: int) -> CompositeTerm:
+        raise NotImplementedError
+
+    def moveaxis(
+        self, source: int | Sequence[int], destination: int | Sequence[int]
+    ) -> CompositeTerm:
+        raise NotImplementedError
+
+    def expand_dims(self, axis: int | Sequence[int]) -> CompositeTerm:
+        raise NotImplementedError
+
     def trace(self) -> Array:
         # tr(c·⊗A_k) = c·Π_k tr(A_k) → each op's .trace().
         return jnp.asarray(
